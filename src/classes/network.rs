@@ -16,6 +16,7 @@ pub struct FeedOut{
 }
 pub struct Network {
     layers:Vec<Vec<Neuron>>,
+    start_learning_rate:f32,
     learning_rate:f32
 }
 
@@ -23,6 +24,7 @@ impl Network {
     pub fn new(layers:Vec<Vec<Neuron>>,learning_rate:f32) -> Network {
         Network {
             layers:layers,
+            start_learning_rate:learning_rate,
             learning_rate:learning_rate
         }
     }
@@ -39,12 +41,15 @@ impl Network {
         }
 
         let output_layer = &self.layers[1];
+
+        let mut output_activ = vec![];
         let mut output_base= vec![];
         for neuron in output_layer {
             let output_base_out = neuron.out_base(&input_activ);
+            let output_activ_out = sigmoid(output_base_out);
            output_base.push(output_base_out);
+           output_activ.push(output_activ_out);
         }
-        let output_activ = softmax(&output_base); 
 
         let activated = vec![input_activ,output_activ.clone()];
 
@@ -58,35 +63,48 @@ impl Network {
     }
     pub fn backprop(&mut self,errs:Vec<f32>,input:&Vec<f32>,activated:Vec<Vec<f32>>,base:Vec<Vec<f32>>) {
         let mut to_next:Vec<Vec<f32>> = vec![];
+        let mut temp_to_next:Vec<Vec<f32>> = vec![];
+        let neuron_amounts:Vec<usize> = self.layers.iter().map(|val|val.len()).collect();
 
-            for _ in 0..self.layers[0].len(){
-                to_next.push(vec![]);
-            } 
-        for (num_n,neuron) in self.layers[1].iter_mut().enumerate() {
-            //let derived_out = derived_sigmoid(base[1][num_n]);
-            let err = errs[num_n];
-            let mut sum_next = vec![];
-            for (num_w,weight) in neuron.weights.iter_mut().enumerate() {
-                let to_next = *weight*err; 
-                sum_next.push(to_next);
+        for (layer_n,layer) in self.layers.iter_mut().enumerate().rev() {
+            to_next = temp_to_next;
+            if layer_n != 0{
 
-                let change= activated[0][num_w];
-                *weight -=err*self.learning_rate*change; 
+            temp_to_next = vec![vec![];neuron_amounts[layer_n-1]];
             }
-            neuron.bias-=self.learning_rate*err;
-            for (i,val) in sum_next.iter().enumerate() {
-                to_next[i].push(*val);
+            else {
+                temp_to_next = vec![];
             }
-        }
+            for (num_n,neuron) in layer.iter_mut().enumerate() {
+                let derived_out = derived_sigmoid(base[layer_n][num_n]);
+                let err = if to_next.len() ==0 {
+                    errs[num_n]
+                }
+                else {
+                    to_next[num_n].iter().fold(0.0,|acc,val|acc+val) 
+                };
+                let mut sum_next = vec![];
+                for (weight_n,weight) in neuron.weights.iter_mut().enumerate() {
+                    let to_next = *weight*err*derived_out;
+                    sum_next.push(to_next);
 
-        for (num_n,neuron) in self.layers[0].iter_mut().enumerate() {
-            let derived_out = derived_sigmoid(base[0][num_n]);
-            let err = to_next[num_n].iter().fold(0.0,|acc,val|acc+val); 
-            for (num_w,weight) in neuron.weights.iter_mut().enumerate() {
-                let change= derived_out*input[num_w];
-                *weight -=err*self.learning_rate*change; 
+                    let pre = if layer_n == 0{
+                        input[weight_n]
+                    } else {
+
+                        activated[layer_n-1][weight_n]
+                    };
+                    let change = pre*derived_out;
+                    *weight -=err*self.learning_rate*change;
+                }
+
+                neuron.bias-=self.learning_rate*err*derived_out;
+                if layer_n != 0 {
+                    for (i,val) in sum_next.iter().enumerate() {
+                        temp_to_next[i].push(*val);
+                    }
+                }
             }
-            neuron.bias-=err*self.learning_rate*derived_out*err;
         }
     }
     pub fn train(&mut self,answers:Vec<Vec<f32>>,inputs:Vec<Vec<f32>>,cycles:usize,rng:&mut ThreadRng) {
@@ -163,9 +181,6 @@ impl Network {
                         println!("{:?}",pred_ind);
                         println!("{:?}",real_predictions);
 
-                        let pred_sum_sum = real_predictions.iter().fold(0.0,|acc,val|acc+val);
-
-                        println!("Pred sum: {}",pred_sum_sum);
                     }
                     if ans_ind == pred_ind {
                         amount_right+=1.0;
@@ -173,6 +188,7 @@ impl Network {
                     sum+=temp_sum/f_ans_len;
                 }
                 let proc_err = (amount_right/(input_length as f32))*100.0; 
+                self.learning_rate=self.start_learning_rate*(1.0-proc_err/100.0);
                 let err = sum/(input_length as f32);
                 let layer_string:String  = serde_json::to_string(&self.layers).unwrap();
                 let mut json_file= File::create("weights.json").unwrap();
@@ -180,7 +196,7 @@ impl Network {
                 csv_string+=&format!("{},{},{}\n",cycle,err,proc_err);
                 let mut file = File::create("random.csv").unwrap();
                 file.write_all(csv_string.as_bytes()).unwrap();
-                println!("Cycle: {}\nErr: {}\nAccuracy: {}\n",cycle,err,proc_err);
+                println!("Cycle: {}\nErr: {}\nAccuracy: {}\nLearning rate: {}\n",cycle,err,proc_err,&self.learning_rate);
             }
         }
     }

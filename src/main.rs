@@ -61,20 +61,20 @@ fn load_test(reader:&mut Reader<&[u8]>) -> Vec<Vec<f32>> {
 
 fn main() {
     let mut rng = rand::thread_rng();
-    let load_weights = true;
+    let load_weights = false;
 
-    let path = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network\data\train.csv";
+    let path = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network_sigmoid\data\train.csv";
 
-    let test_path = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network\data\test.csv";
+    let test_path = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network_sigmoid\data\test.csv";
 
-    let weight_file= r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network\weights.json";
+    let weight_file= r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network_sigmoid\weights.json";
 
-    let file_content = fs::read_to_string(test_path).unwrap(); 
+    let file_content = fs::read_to_string(path).unwrap(); 
     let mut reader = Reader::from_reader(file_content.as_bytes());
-    /*
     let [answers,input] = split_answer(&mut reader);
-    */
+    /*
     let input = load_test(&mut reader);
+    */
 
     let in_weights:Vec<Vec<Neuron>>;
    if load_weights == true {
@@ -91,17 +91,14 @@ fn main() {
     in_weights = over_all;
    }
     
-    let mut network = Network::new(in_weights,0.01); 
+    let mut network = Network::new(in_weights,1.0); 
+    network.train(answers,input,500000,&mut rng);
     /*
-    network.train(answers,input,100000,&mut rng);
-    */
-
     for i in 0..100 {
     let output = network.feedforward(&input[i]);
     let pre_ind = get_ind_max(&output.out);
     println!("{}",pre_ind);
     }
-    /*
     let ans_ind = get_ind_max(&answers[i]);
     println!("{}",ans_ind);
     println!("");
