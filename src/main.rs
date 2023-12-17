@@ -1,67 +1,118 @@
-use rand::{Rng};
+
 
 mod misc;
-use misc::weight_funcs::gen_weight;
+use misc::weight_funcs::{gen_layer};
 
 mod classes;
 use classes::{network::Network,neuron::Neuron};
 
 mod math;
+use math::{get_maks::get_ind_max};
+
+use std::fs;
+
+use csv::{Reader};
+
+
+fn parse_answer(num:f32) -> Vec<f32> {
+    const SIZE:usize = 10;
+    let mut temp_vec = vec![0.0;SIZE];
+    let temp = num as usize;
+    temp_vec[temp] = 1.0; 
+    temp_vec
+} 
+fn split_answer(reader:&mut Reader<&[u8]>) ->[Vec<Vec<f32>>;2]   {
+
+    let mut answers:Vec<Vec<f32>> = vec![];
+    let mut input :Vec<Vec<f32>> = vec![];
+    for record in reader.records() {
+        let record = record.unwrap();
+        let mut temp_input:Vec<f32> = vec![]; 
+        for (i,val) in record.iter().enumerate()  {
+            let parsed:f32 = val.parse().unwrap();
+            if i == 0 {
+               let temp_answer:Vec<f32> = parse_answer(parsed);  
+               answers.push(temp_answer);
+            }
+            else {
+                temp_input.push((parsed/128.0)-1.0);
+            }
+        }
+        input.push(temp_input);
+    }
+    return [answers,input]
+}
+fn load_test(reader:&mut Reader<&[u8]>) -> Vec<Vec<f32>> {
+
+    let mut input :Vec<Vec<f32>> = vec![];
+    for record in reader.records() {
+        let record = record.unwrap();
+        let mut temp_input:Vec<f32> = vec![]; 
+        for (i,val) in record.iter().enumerate()  {
+            let parsed:f32 = val.parse().unwrap();
+            temp_input.push((parsed/128.0)-1.0);
+        }
+        input.push(temp_input);
+    }
+    input
+} 
+
+
 
 fn main() {
     let mut rng = rand::thread_rng();
+    let load_weights = true;
 
-    let weight1 = gen_weight(3,&mut rng); 
-    let neuron1 = Neuron::new(weight1,rng.gen_range(0.0..1.0));
+    let path = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network\data\train.csv";
 
-    let weight2 = gen_weight(3,&mut rng); 
-    let neuron2 = Neuron::new(weight2,rng.gen_range(0.0..1.0));
-    let layer1 = vec![neuron1,neuron2];
+    let test_path = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network\data\test.csv";
 
-    let weight3 = gen_weight(2,&mut rng); 
-    let neuron3 = Neuron::new(weight3,rng.gen_range(0.0..1.0));
+    let weight_file= r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network\weights.json";
 
-    let weight4 = gen_weight(2,&mut rng); 
-    let neuron4 = Neuron::new(weight4,rng.gen_range(0.0..1.0));
-    let layer2 = vec![neuron3,neuron4];
+    let file_content = fs::read_to_string(test_path).unwrap(); 
+    let mut reader = Reader::from_reader(file_content.as_bytes());
+    /*
+    let [answers,input] = split_answer(&mut reader);
+    */
+    let input = load_test(&mut reader);
 
-    let overall = vec![layer1,layer2];
+    let in_weights:Vec<Vec<Neuron>>;
+   if load_weights == true {
+    let weight_content= fs::read_to_string(weight_file).unwrap(); 
+    let all_weights = serde_json::from_str::<Vec<Vec<Neuron>>>(&weight_content).unwrap(); 
+    in_weights = all_weights;
+   } 
+   else {
 
+    let layer_1 = gen_layer(15,784,&mut rng);
+    let layer_output = gen_layer(10,15,&mut rng);
 
-    let t0 = vec![1.0,0.0,1.0];
-    let t1 = vec![0.0,1.0,0.0];
-    let t2 = vec![1.0,1.0,1.0];
-    let t3 = vec![0.0,0.0,1.0];
-    let t4 = vec![1.0,1.0,0.0];
-    let t5 = vec![0.0,1.0,1.0];
-
-    let inputs = vec![t0,t1,t2,t3,t4,t5];
+    let over_all = vec![layer_1,layer_output]; 
+    in_weights = over_all;
+   }
     
-    let a0 = vec![1.0,0.0];
-    let a1 = vec![0.0,1.0];
-    let a2 = vec![0.0,1.0];
-    let a3 = vec![0.0,1.0];
-    let a4 = vec![1.0,0.0];
-    let a5 = vec![1.0,0.0];
+    let mut network = Network::new(in_weights,0.01); 
+    /*
+    network.train(answers,input,100000,&mut rng);
+    */
+
+    for i in 0..100 {
+    let output = network.feedforward(&input[i]);
+    let pre_ind = get_ind_max(&output.out);
+    println!("{}",pre_ind);
+    }
+    /*
+    let ans_ind = get_ind_max(&answers[i]);
+    println!("{}",ans_ind);
+    println!("");
+    }
+    */
+    
+    
 
 
 
 
-    let answers = vec![a0,a1,a2,a3,a4,a5];
-    let mut network = Network::new(overall,0.01);
-    network.train(answers,inputs,1000000,&mut rng);
 
-    let temp = vec![0.0,1.0,1.0]; 
-    let out = network.feedforward(&temp);
-    println!("{:?}",out.out);
-
-
-    let temp2 = vec![0.0,0.0,1.0]; 
-    let out2 = network.feedforward(&temp2);
-    println!("{:?}",out2.out);
-
-    let temp3 = vec![1.0,1.0,1.0]; 
-    let out3 = network.feedforward(&temp3);
-    println!("{:?}",out3.out);
 }
 

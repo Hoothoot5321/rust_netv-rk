@@ -1,8 +1,14 @@
 use crate::classes::neuron::Neuron;
-use crate::math::{sigmoid::{sigmoid,derived_sigmoid},mean_squared::{mean_squared,derived_mean_squared}};
+use serde_json;
+use crate::math::{sigmoid::{sigmoid,derived_sigmoid}
+    ,mean_squared::{mean_squared
+        ,derived_mean_squared}
+    ,get_maks::get_ind_max
+        ,softmax::softmax};
 use std::fs::File;
 use std::io::prelude::*;
-use rand::{Rng,rngs::ThreadRng};
+use rand::{Rng,rngs::ThreadRng,seq::SliceRandom};
+
 pub struct FeedOut{
     pub out:Vec<f32>,
     pub activated:Vec<Vec<f32>>,
@@ -21,24 +27,31 @@ impl Network {
         }
     }
     pub fn feedforward(&self,input:&Vec<f32>) -> FeedOut{
-        let mut data = input.clone();
-        let mut activated = vec![];
-        let mut base= vec![];
-        for layer in self.layers.iter() {
-            let mut temp_vec = vec![];
-            let mut temp_base= vec![];
-            for neuron in layer.iter() {
-                let output = neuron.out_base(&data);
-                let activ = sigmoid(output); 
-                temp_base.push(output);
-                temp_vec.push(activ);
-            }
-            data = temp_vec.clone();
-            activated.push(temp_vec);
-            base.push(temp_base);
+        let input_layer = &self.layers[0];
+        let mut input_activ = vec![];
+        let mut input_base= vec![];
+
+        for neuron in input_layer{
+           let input_base_out = neuron.out_base(input); 
+           let input_activ_out = sigmoid(input_base_out);
+           input_activ.push(input_activ_out);
+           input_base.push(input_base_out);
         }
+
+        let output_layer = &self.layers[1];
+        let mut output_base= vec![];
+        for neuron in output_layer {
+            let output_base_out = neuron.out_base(&input_activ);
+           output_base.push(output_base_out);
+        }
+        let output_activ = softmax(&output_base); 
+
+        let activated = vec![input_activ,output_activ.clone()];
+
+        let base = vec![input_base,output_base];
+
         FeedOut{
-            out:data,
+            out:output_activ,
             activated:activated,
             base:base
         }
@@ -50,17 +63,17 @@ impl Network {
                 to_next.push(vec![]);
             } 
         for (num_n,neuron) in self.layers[1].iter_mut().enumerate() {
-            let derived_out = derived_sigmoid(base[1][num_n]);
+            //let derived_out = derived_sigmoid(base[1][num_n]);
             let err = errs[num_n];
             let mut sum_next = vec![];
             for (num_w,weight) in neuron.weights.iter_mut().enumerate() {
-                let to_next = *weight*derived_out*err; 
+                let to_next = *weight*err; 
                 sum_next.push(to_next);
 
-                let change= derived_out*activated[0][num_w];
-                *weight +=err*self.learning_rate*change; 
+                let change= activated[0][num_w];
+                *weight -=err*self.learning_rate*change; 
             }
-            neuron.bias+=err*self.learning_rate*derived_out;
+            neuron.bias-=self.learning_rate*err;
             for (i,val) in sum_next.iter().enumerate() {
                 to_next[i].push(*val);
             }
@@ -71,52 +84,104 @@ impl Network {
             let err = to_next[num_n].iter().fold(0.0,|acc,val|acc+val); 
             for (num_w,weight) in neuron.weights.iter_mut().enumerate() {
                 let change= derived_out*input[num_w];
-                *weight +=err*self.learning_rate*change; 
+                *weight -=err*self.learning_rate*change; 
             }
-            neuron.bias+=err*self.learning_rate*derived_out;
+            neuron.bias-=err*self.learning_rate*derived_out*err;
         }
     }
     pub fn train(&mut self,answers:Vec<Vec<f32>>,inputs:Vec<Vec<f32>>,cycles:usize,rng:&mut ThreadRng) {
-        let mut csv_string = String::new();
+        let mut csv_string = String::from("Cycles,Err,Accuracy\n");
+        let batch_size = 10;
+        let f_batch_size = batch_size as f32;
+        let mut temp_random:Vec<usize> =(0..inputs.len()).collect(); 
+        temp_random.shuffle(rng);
+        let mut batch = &temp_random[0..batch_size];
         for cycle in 0..cycles {
-            let round = rng.gen_range(0.. inputs.len());
-            let answer = &answers[round];
-            let input = &inputs[round];
+            let mut errs = vec![0.0;10]; 
+            let mut full_activated = vec![];
+            let mut full_base = vec![];
+            let mut full_input = vec![0.0;inputs[0].len()];
+            for temp_l in 0..self.layers.len() {
+                let mut temp_vec = vec![0.0;self.layers[temp_l].len()];
+                full_activated.push(temp_vec.clone());
+                full_base.push(temp_vec);
+            }
+            for batch_num in batch {
 
-            let output = self.feedforward(input); 
-            let predictions = output.out;
+                let answer = &answers[*batch_num];
+                let input = &inputs[*batch_num];
 
-           let mut errs = vec![]; 
-           for (i,prediction) in predictions.iter().enumerate() {
-               let err = derived_mean_squared(*prediction,answer[i]);
-               errs.push(err);
+                let output = self.feedforward(input); 
+                let predictions = output.out;
+                let real_predictions = predictions;
+
+                for (i,prediction) in real_predictions.iter().enumerate() {
+                    let err = derived_mean_squared(*prediction,answer[i]);
+                    errs[i]+=err/f_batch_size;
+                }
+                for inst in 0..input.len() {
+                   full_input[inst]+=input[inst]/f_batch_size; 
+                }
+
+                let activated = output.activated;
+                let base = output.base;
+                for ind in 0..activated.len() {
+                    for ind2 in 0..activated[ind].len() {
+                        full_activated[ind][ind2]+=activated[ind][ind2]/f_batch_size;
+
+                        full_base[ind][ind2]+=base[ind][ind2]/f_batch_size;
+                    }
+                }
            }
 
-           let activated = output.activated;
-           let base = output.base;
-           self.backprop(errs,input,activated,base);
+           self.backprop(errs,&full_input,full_activated,full_base);
+
+           temp_random.shuffle(rng);
+           batch = &temp_random[0..batch_size];
 
             if cycle % 1000 == 0 {
                 let mut sum = 0.0;
                 let input_length = inputs.len();
                 let answer_length = answers[0].len();
                 let f_ans_len = answer_length as f32;
+                let mut amount_right = 0.0;
                 for i in 0..input_length{
                     let output = self.feedforward(&inputs[i]);
                     let predictions = output.out;
+                    let real_predictions = predictions;
+                    
 
                     let mut temp_sum = 0.0;
                     for a in 0..answer_length{
-                        temp_sum+= mean_squared(predictions[a],answers[i][a]);
+                        temp_sum+= mean_squared(real_predictions[a],answers[i][a]);
+                    }
+                    let ans_ind = get_ind_max(&answers[i]);
+                    let pred_ind = get_ind_max(&real_predictions);
+
+                    if i == 0 {
+                        println!("{:?}",ans_ind);
+                        println!("{:?}",pred_ind);
+                        println!("{:?}",real_predictions);
+
+                        let pred_sum_sum = real_predictions.iter().fold(0.0,|acc,val|acc+val);
+
+                        println!("Pred sum: {}",pred_sum_sum);
+                    }
+                    if ans_ind == pred_ind {
+                        amount_right+=1.0;
                     }
                     sum+=temp_sum/f_ans_len;
                 }
+                let proc_err = (amount_right/(input_length as f32))*100.0; 
                 let err = sum/(input_length as f32);
-                csv_string+=&format!("{},{}\n",cycle,err);
-                println!("Err: {}",err);
+                let layer_string:String  = serde_json::to_string(&self.layers).unwrap();
+                let mut json_file= File::create("weights.json").unwrap();
+                json_file.write_all(layer_string.as_bytes()).unwrap(); 
+                csv_string+=&format!("{},{},{}\n",cycle,err,proc_err);
+                let mut file = File::create("random.csv").unwrap();
+                file.write_all(csv_string.as_bytes()).unwrap();
+                println!("Cycle: {}\nErr: {}\nAccuracy: {}\n",cycle,err,proc_err);
             }
         }
-        let mut file = File::create("random.csv").unwrap();
-        file.write_all(csv_string.as_bytes()).unwrap();
     }
 }

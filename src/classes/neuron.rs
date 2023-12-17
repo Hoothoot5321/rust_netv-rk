@@ -1,6 +1,8 @@
 use crate::math::sigmoid::sigmoid;
 use crate::misc::weight_funcs::dot_vecs;
-#[derive(Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Neuron {
     pub weights:Vec<f32>,
     pub bias:f32
