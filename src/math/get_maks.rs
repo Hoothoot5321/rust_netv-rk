@@ -1,5 +1,5 @@
 
-pub fn get_ind_max(arr:&Vec<f32>) -> usize {
+pub fn get_ind_max(arr:&Vec<f64>) -> usize {
     let mut pre_val = &(0.0);
     let mut index = 0;
     for (i,val) in arr.iter().enumerate() {
