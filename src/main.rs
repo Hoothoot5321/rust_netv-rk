@@ -15,7 +15,7 @@ use csv::{Reader};
 
 
 fn parse_answer(num:f64) -> Vec<f64> {
-    const SIZE:usize = 36;
+    const SIZE:usize = 10;
     let mut temp_vec = vec![0.0;SIZE];
     let temp = num as usize;
     temp_vec[temp] = 1.0; 
@@ -65,16 +65,18 @@ fn main() {
 
     let path = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network_sigmoid\num_c_train.csv";
     let test_path = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network_sigmoid\num_c_test.csv".to_owned();
-    let test_sing = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network_sigmoid\testes.csv"; 
-    let weight_file = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network_sigmoid\weight 96-proc.json";
+    let tal_test = r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network_sigmoid\data\test new.csv";
+    let tal_train =r"C:\Users\MartinNammat\Documents\Programming-2\all_tests\rust_network_sigmoid\data\train new.csv";
+    let weight_file = "sui";
 
-    let file_content = fs::read_to_string(path).unwrap(); 
+    //let file_content = fs::read_to_string(path).unwrap(); 
+    let file_content = fs::read_to_string(tal_train).unwrap(); 
     let mut reader = Reader::from_reader(file_content.as_bytes());
     let [answers,input] = split_answer(&mut reader);
-    let file_test = fs::read_to_string(test_path).unwrap();
+    //let file_test = fs::read_to_string(test_path).unwrap();
+    let file_test = fs::read_to_string(tal_test).unwrap();
     let mut test_reader = Reader::from_reader(file_test.as_bytes());
     let [test_ans,test_in] = split_answer(&mut test_reader);
-    //let input = load_test(&mut reader);
     let in_weights:Vec<Vec<Neuron>>;
    if load_weights {
     let weight_content= fs::read_to_string(weight_file).unwrap(); 
@@ -85,21 +87,19 @@ fn main() {
 
     let layer_1 = gen_layer(40,784,&mut rng);
 
-
-
-    let layer_output = gen_layer(36,40,&mut rng);
+    let layer_output = gen_layer(10,40,&mut rng);
 
     let over_all = vec![layer_1,layer_output]; 
     in_weights = over_all;
    }
-   let mut network = Network::new(in_weights,0.5); 
+   let mut network = Network::new(in_weights,0.01); 
 
    let start = Instant::now();
-   network.train(&answers,&input,&test_ans,&test_in,500000,&mut rng,start,"Teties".to_owned(),0);
+   network.train(&answers,&input,&test_ans,&test_in,50000,&mut rng,start,"Sigmoid tal".to_owned(),1);
     /*
-   let layers = vec![1,2,3];
-   let neurons = vec![5,10,15,20];
-   for i in 0..10 {
+   let layers = vec![1,2,3,4,5];
+   let neurons = vec![50];
+   for i in 0..4 {
        layers.iter().for_each(|l_n| {
            neurons.iter().for_each(|n_n| {
                let start = Instant::now();
@@ -115,13 +115,13 @@ fn main() {
 
                over_all.push(output_layer);
 
-               let mut network = Network::new(over_all,1.0);
+               let mut network = Network::new(over_all,0.0001);
                let title = format!("Antal H lag: {}|Nueroner pr lag {}",l_n,n_n);
-               network.train(&answers,&input,&test_ans,&test_in,10000,&mut rng,start,title,i);
+               network.train(&answers,&input,&test_ans,&test_in,100000,&mut rng,start,title,i);
            })
        })
     }  
-    */
+   */
    /*
     let mut inds:Vec<usize> = (0..test_in.len()).collect();
     inds.shuffle(&mut rng);

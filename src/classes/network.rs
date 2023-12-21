@@ -6,7 +6,8 @@ use crate::math::{sigmoid::{sigmoid,derived_sigmoid}
     ,mean_squared::{mean_squared
         ,derived_mean_squared}
     ,get_maks::get_ind_max
-        ,softmax::softmax,
+        ,softmax::{softmax,safe_softmax}
+        ,cross_entropy::{cross_entropy_loss,derived_cross_entropy_loss},
     relu::{relu,derived_relu}};
 use std::fs::File;
 use std::io::prelude::*;
@@ -54,6 +55,8 @@ impl Network {
                 }
                 else {
 
+                   //let activ_out= sigmoid(base_out);
+                    
                     let activ_out= base_out;
 
                     activ_out_arr.push(activ_out);
@@ -72,7 +75,8 @@ impl Network {
             base.push(temp_base);
             activated.push(temp_activ);
         }
-        let out_data = softmax(&data);
+        let out_data = safe_softmax(&data);
+        //let out_data = data;
         FeedOut{
             out:out_data,
             activated:activated,
@@ -80,13 +84,12 @@ impl Network {
         }
     }
     pub fn backprop(&mut self,errs:Vec<f64>,input:&Vec<f64>,activated:Vec<Vec<f64>>,base:Vec<Vec<f64>>) {
-        let mut to_next:Vec<Vec<f64>> = vec![];
         let mut temp_to_next:Vec<Vec<f64>> = vec![];
         let neuron_amounts:Vec<usize> = self.layers.iter().map(|val|val.len()).collect();
 
 
         for (layer_n,layer) in self.layers.iter_mut().enumerate().rev() {
-            to_next = temp_to_next;
+            let to_next = temp_to_next;
             if layer_n != 0{
             temp_to_next = vec![vec![];neuron_amounts[layer_n-1]];
             }
@@ -104,27 +107,21 @@ impl Network {
                     derived_out = derived_relu(base[layer_n][num_n]);
                     to_next[num_n].iter().fold(0.0,|acc,val|acc+val) 
                 };
-                let mut sum_next = vec![];
                 for (weight_n,weight) in neuron.weights.iter_mut().enumerate() {
-                    let to_next = *weight*err*derived_out;
-                    sum_next.push(to_next);
+                    let to_next_val = *weight*err*derived_out;
 
-                    let pre = if layer_n == 0{
+                    let pre = if layer_n != 0 {
+                            temp_to_next[weight_n].push(to_next_val);
+                            activated[layer_n-1][weight_n]
+                    }
+                    else {
                         input[weight_n]
-                    } else {
-
-                        activated[layer_n-1][weight_n]
                     };
                     let change = pre*derived_out;
                     *weight -=err*self.learning_rate*change;
                 }
 
                 neuron.bias-=self.learning_rate*err*derived_out;
-                if layer_n != 0 {
-                    for (i,val) in sum_next.iter().enumerate() {
-                        temp_to_next[i].push(*val);
-                    }
-                }
             }
         }
     }
@@ -132,14 +129,14 @@ impl Network {
         let file_name = format!("random-bogstav{}.csv",iteration);
         let mut start_csv = fs::read_to_string(&file_name).unwrap_or_else(|_|"".to_string())+",,,\n";
 
-        let mut csv_string = start_csv+&title+",,,\nCycles,Time,Err,Accuracy\n";
-        let batch_size = 36;
+        let mut csv_string = start_csv+&title+",,,\nCycles,Accuracy Testing, Accuracy Training,Err,Time\n";
+        let batch_size = 1;
         let f_batch_size = batch_size as f64;
         let mut temp_random:Vec<usize> =(0..inputs.len()).collect(); 
         temp_random.shuffle(rng);
         let mut batch = &temp_random[0..batch_size];
         for cycle in 0..cycles {
-            let mut errs = vec![0.0;36]; 
+            let mut errs = vec![0.0;10]; 
             let mut full_activated = vec![];
             let mut full_base = vec![];
             let mut full_input = vec![0.0;inputs[0].len()];
@@ -158,7 +155,8 @@ impl Network {
                 let real_predictions = predictions;
 
                 for (i,prediction) in real_predictions.iter().enumerate() {
-                    let err = derived_mean_squared(*prediction,answer[i]);
+                    let err = derived_cross_entropy_loss(*prediction,answer[i]);
+                    //let err = derived_mean_squared(*prediction,answer[i]);
                     errs[i]+=err/f_batch_size;
                 }
                 for inst in 0..input.len() {
@@ -186,7 +184,7 @@ impl Network {
                 let input_length = test_in.len();
                 let answer_length = test_ans[0].len();
                 let f_ans_len = answer_length as f64;
-                let mut amount_right = 0.0;
+                let mut amount_right_testing = 0.0;
                 for i in 0..input_length{
                     let output = self.feedforward(&test_in[i]);
                     let predictions = output.out;
@@ -195,7 +193,8 @@ impl Network {
 
                     let mut temp_sum = 0.0;
                     for a in 0..answer_length{
-                        temp_sum+= mean_squared(real_predictions[a],test_ans[i][a]);
+                        temp_sum+= cross_entropy_loss(real_predictions[a],test_ans[i][a]);
+                        //temp_sum+=mean_squared(real_predictions[a],test_ans[i][a]);
                     }
                     let ans_ind = get_ind_max(&test_ans[i]);
                     let pred_ind = get_ind_max(&real_predictions);
@@ -207,22 +206,54 @@ impl Network {
 
                     }
                     if ans_ind == pred_ind {
-                        amount_right+=1.0;
+                        amount_right_testing+=1.0;
                     }
-                    sum+=temp_sum/f_ans_len;
+
+                    //Hvis mean square
+                    //sum+=temp_sum/f_ans_len;
+                    
+                    //Hvis cross entropy
+                    sum+=temp_sum;
                 }
-                let proc_err = (amount_right/(input_length as f64))*100.0; 
-                self.learning_rate=self.start_learning_rate*(1.0-proc_err/100.0);
-                let err = sum/(input_length as f64);
+
+                let proc_err_testing = (amount_right_testing/(input_length as f64))*100.0; 
+                self.learning_rate=self.start_learning_rate*(1.0-proc_err_testing/100.0);
+
+                //His mean square
+                //let err = sum/(input_length as f64);
+    
+                //Hvis cross entropy
+                let err = -sum/(input_length as f64);
+
+                let input_length_training = inputs.len();
+                let mut amount_right_training = 0.0;
+                for i in 0..input_length_training{
+                    let output = self.feedforward(&inputs[i]);
+                    let predictions = output.out;
+                    let real_predictions = predictions;
+                    
+
+                    let ans_ind = get_ind_max(&answers[i]);
+                    let pred_ind = get_ind_max(&real_predictions);
+
+                    if ans_ind == pred_ind {
+                        amount_right_training+=1.0;
+                    }
+
+                }
+
+                let proc_err_training= (amount_right_training/(input_length_training as f64))*100.0; 
+                /*
                 let layer_string:String  = serde_json::to_string(&self.layers).unwrap();
-                let mut json_file= File::create("weights.json").unwrap();
+                let mut json_file= File::create("weights".to_string()+&(iteration.to_string())+".json").unwrap();
                 json_file.write_all(layer_string.as_bytes()).unwrap(); 
+                */
                 let elapsed = (start_time.elapsed().as_millis() as f64)/1000.0;
-                csv_string+=&format!("{},{},{},{}\n",cycle,elapsed,err,proc_err);
+                csv_string+=&format!("{},{},{},{},{}\n",cycle,proc_err_testing,proc_err_training,err,elapsed);
                 let mut file = File::create(&file_name).unwrap();
                 file.write_all(csv_string.as_bytes()).unwrap();
                 println!("Title: {}\nOmgang: {}",title,iteration);
-                println!("Cycle: {}\nErr: {}\nAccuracy: {}\nLearning rate: {}\nTime: {}\n",cycle,err,proc_err,&self.learning_rate,elapsed);
+                println!("Cycle: {}\nErr Test: {}\nAccuracy Testing: {}\nAccuracy Training: {}\nLearning rate: {}\nTime: {}\n",cycle,err,proc_err_testing,proc_err_training,&self.learning_rate,elapsed);
             }
         }
     }
